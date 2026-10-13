@@ -1,0 +1,77 @@
+sequenceDiagram
+  autonumber
+  participant H as Host client
+  participant GA as WS gateway fleet A (home region)
+  participant RO as Room owner (shard owner, epoch E)
+  participant LS as Lease store (etcd)
+  participant K as Kafka room-events
+  participant RS as Redis (snapshot and sharded pub/sub)
+  participant RL as Cross-region relay
+  participant GB as WS gateways B (remote region)
+  participant LA as Listeners on A (about 3000)
+  participant LB as Listeners on B (about 2000)
+  participant OB as Observability (OTel, ClickHouse)
+
+  H->>GA: PAUSE (commandId C1, expectedVersion v41, trackInstanceId T7, traceparent) over WSS
+  Note over H: UI shows pending. Audio keeps playing until the committed event arrives
+  GA->>GA: validate join ticket, origin, schema, size, per-user rate limit
+  alt validation fails
+    GA-->>H: ERROR INVALID or RATE_LIMITED
+  end
+  GA->>RO: forward command to shard owner (gRPC, 1 s deadline)
+  alt owner unreachable or no reply within deadline
+    GA-->>H: PENDING, client retries with the same commandId (max 3, backoff)
+    Note over H,GA: Audio keeps playing for everyone. Controls show unavailable while owner failover runs
+  end
+  RO--)LS: background keepalive every 3 s (not on the command path)
+  RO->>RO: lease deadline check on local monotonic clock, self-fence if near expiry
+  RO->>RO: authorize host role, deduplicate by commandId, check trackInstanceId
+  alt duplicate commandId already committed
+    RO-->>GA: cached ACK for v42, no new state change
+  else stale expectedVersion and trackInstanceId differs
+    RO-->>GA: REJECT STALE_STATE plus latest snapshot
+  else already paused and new commandId
+    RO-->>GA: ACK no-op, version unchanged
+  else apply pause
+    RO->>RO: positionMs = anchorPos + (serverNow - anchorTs) * rate, status PAUSED, version v42
+    RO->>K: append PlaybackPaused v42 epoch E (acks=all, transactional producer fences old owners)
+    alt Kafka append fails or exceeds 250 ms
+      RO-->>GA: ERROR COMMIT_FAILED, nothing published, in-memory state unchanged
+      GA-->>H: ERROR, host may retry with the same commandId
+    else committed
+      K-->>RO: ack (replicated across 3 AZs)
+      par Ack to host
+        RO-->>GA: ACK v42 with serverTimestamp
+        GA-->>H: ACK committed v42
+      and Home-region fan-out
+        RO->>RS: CAS snapshot v42 if epoch >= stored epoch, publish to channel room:ID
+        RS-->>GA: one copy per subscribed gateway (about 10 to 20 gateways for this room)
+      and Remote-region fan-out
+        RS-->>RL: same event, one subscription per room
+        RL->>GB: one copy per subscribed remote gateway
+      end
+      Note over RO,GB: The owner acks the host after the durable commit. It never waits for 5000 listener acknowledgements
+      par Home region delivery
+        loop micro-batches of 256 sockets per gateway
+          GA->>LA: PAUSED (v42, positionMs, serverTimestamp), same pre-serialized frame
+        end
+      and Remote region delivery
+        GB->>LB: PAUSED (v42, positionMs, serverTimestamp)
+      end
+      LA->>LA: accept if version = last + 1, pause audio, snap to positionMs
+      LB->>LB: same as listeners on A
+      opt gap detected, missed event or reconnect
+        LA->>GA: RESYNC (lastVersion v40)
+        GA-->>LA: SNAPSHOT v42 from gateway cache or Redis
+      end
+      opt a gateway or listener is slow or disconnected
+        Note over GA,LB: Bounded send queue drops the frame for that socket only. The client resyncs by version on the next event or the 15 s anti-entropy beacon
+      end
+      LA-->>GA: sampled telemetry (appliedVersion, appliedAtServerTime, driftMs), batched every 10 s
+      LB-->>GB: sampled telemetry, batched every 10 s
+      GA->>GA: aggregate into per-room histograms
+      GA--)OB: propagation latency, drift histogram, rejected commands
+      RO--)OB: commit latency, version, trace span
+      OB->>OB: join by roomId, stateVersion, traceId, playbackSessionId
+    end
+  end

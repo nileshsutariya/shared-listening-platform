@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#10110f">
+    <title>Listen Together</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="Listen Together home">
+          <span class="brand-mark"><span></span><span></span><span></span><span></span></span>
+          <span>listen<span class="brand-light">together</span></span>
+        </a>
+        <div class="topbar-right">
+          <span class="live-indicator"><i></i><span id="connection-label">NOT CONNECTED</span></span>
+          <span class="topbar-divider"></span>
+          <span class="avatar" id="avatar">?</span>
+          <span class="profile-name" id="profile-name">Guest</span>
+        </div>
+      </header>
+
+      <main>
+        <section class="welcome-section" id="welcome">
+          <div class="welcome-copy">
+            <p class="eyebrow"><span class="eyebrow-line"></span> THE DISTANCE DISAPPEARS</p>
+            <h1>Good music.<br><span>Better together.</span></h1>
+            <p class="intro">Create a room, invite your people, and press play at the same time. Wherever everyone is.</p>
+            <label class="field-label" for="user-name">YOUR NAME</label>
+            <div class="identity-row">
+              <input id="user-name" type="text" maxlength="32" placeholder="What should we call you?" autocomplete="name">
+              <button class="button button-primary" id="create-room"><span class="button-icon">+</span> Create a room</button>
+            </div>
+            <div class="join-divider"><span></span> OR JOIN YOUR PEOPLE <span></span></div>
+            <div class="join-row">
+              <input id="invite-link" type="text" placeholder="Paste a room invite link or room ID">
+              <button class="button button-quiet" id="join-room">Join room <span aria-hidden="true">↗</span></button>
+            </div>
+            <p class="form-error" id="form-error" role="status" aria-live="polite"></p>
+            <p class="fine-print">YouTube video is visible to everyone in the room. For audio-only, add a direct MP3 link.</p>
+          </div>
+
+          <div class="hero-art" aria-hidden="true">
+            <div class="art-orbit orbit-one"></div>
+            <div class="art-orbit orbit-two"></div>
+            <div class="art-record"><div class="record-groove groove-one"></div><div class="record-groove groove-two"></div><div class="record-groove groove-three"></div><div class="record-label"><span>LISTEN<br>TOGETHER</span><i></i></div></div>
+            <div class="art-note note-one">♪</div><div class="art-note note-two">♫</div>
+            <div class="art-caption"><span class="caption-dot"></span> ONE ROOM, SAME MOMENT</div>
+          </div>
+        </section>
+
+        <section class="room-layout hidden" id="room">
+          <div class="room-main">
+            <div class="room-heading">
+              <div>
+                <p class="eyebrow"><span class="eyebrow-line"></span> LISTENING ROOM</p>
+                <h2 id="room-title">Your room</h2>
+                <p class="room-subtitle"><span id="member-count">1 listener</span><span class="subtitle-dot">·</span><span id="room-version">Version 0</span></p>
+              </div>
+              <button class="button button-quiet invite-button" id="copy-invite"><span aria-hidden="true">↗</span> Invite friends</button>
+            </div>
+
+            <article class="now-playing card">
+              <div class="album-art" id="album-art">
+                <div class="art-sun"></div><div class="art-horizon"></div><span>LT<br>SESSION</span>
+              </div>
+              <div class="track-details">
+                <p class="eyebrow track-eyebrow"><span class="playing-bars"><i></i><i></i><i></i></span> NOW PLAYING</p>
+                <h3 id="track-title">Nothing playing yet</h3>
+                <p class="track-artist" id="track-artist">Add a track to the queue to get started</p>
+                <div class="progress-wrap">
+                  <input id="seek-bar" type="range" min="0" max="100" value="0" aria-label="Seek through current track" disabled>
+                  <div class="time-row"><span id="elapsed-time">0:00</span><span id="total-time">0:00</span></div>
+                </div>
+                <div class="player-controls">
+                  <button class="control-button vote-button" id="vote-skip" aria-label="Vote to skip" title="Vote to skip">Vote to skip</button>
+                  <span class="vote-count" id="vote-count">0 votes</span>
+                  <button class="round-button play-button" id="playback-control" aria-label="Play" title="Play"><span id="play-icon">▶</span></button>
+                  <button class="control-button next-button hidden" id="next-track" aria-label="Play next track" title="Play next track">Next <span aria-hidden="true">⇥</span></button>
+                  <span class="host-control-label" id="host-control-label">ROOM CONTROLS</span>
+                </div>
+                <p class="notice" id="room-notice" role="status" aria-live="polite"></p>
+              </div>
+            </article>
+            <section class="youtube-panel hidden" id="youtube-panel" aria-label="YouTube player">
+              <div class="youtube-panel-heading">
+                <span><i></i> YOUTUBE PLAYER</span>
+                <a id="open-youtube" href="#" target="_blank" rel="noopener noreferrer">Open on YouTube ↗</a>
+              </div>
+              <div id="youtube-player"></div>
+              <p id="youtube-status" role="status" aria-live="polite">Use the YouTube player's Play button if your browser blocks autoplay.</p>
+            </section>
+            <section class="youtube-panel hidden" id="spotify-panel" aria-label="Spotify player">
+              <div class="youtube-panel-heading">
+                <span><i class="spotify-dot"></i> SPOTIFY PLAYER</span>
+                <a id="open-spotify" href="#" target="_blank" rel="noopener noreferrer">Open in Spotify ↗</a>
+              </div>
+              <iframe id="spotify-player" title="Spotify embedded player" src="about:blank" loading="lazy" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" referrerpolicy="strict-origin-when-cross-origin"></iframe>
+              <p id="spotify-status" role="status" aria-live="polite">Press Play in the Spotify player. Spotify playback requires an available Spotify account.</p>
+            </section>
+            <section class="youtube-panel hidden" id="direct-panel" aria-label="Direct audio or video player">
+              <div class="youtube-panel-heading">
+                <span><i class="direct-dot"></i> DIRECT MEDIA</span>
+                <a id="open-direct" href="#" target="_blank" rel="noopener noreferrer">Open media ↗</a>
+              </div>
+              <audio id="direct-audio" class="hidden" preload="auto"></audio>
+              <video id="direct-video" class="hidden" playsinline preload="auto"></video>
+              <button class="button button-primary enable-audio" id="enable-audio">Enable synchronized media</button>
+              <p id="direct-status" role="status" aria-live="polite">Each listener enables audio once; the host's room controls then manage playback.</p>
+            </section>
+
+            <section class="queue-section">
+              <div class="section-heading"><div><p class="eyebrow"><span class="eyebrow-line"></span> UP NEXT</p><h3>Shared queue <span class="queue-total" id="queue-total">0</span></h3></div><span class="queue-note">Everyone can add a song</span></div>
+              <form class="add-track-form card" id="add-track-form">
+                <label class="visually-hidden" for="track-id">YouTube, Spotify, or direct media link</label>
+                <span class="add-symbol">+</span>
+                <input id="track-id" type="text" maxlength="2000" placeholder="YouTube / Spotify / direct MP3 or MP4 link" required>
+                <label class="visually-hidden" for="track-duration">Duration in seconds</label>
+                <input class="duration-input" id="track-duration" type="number" min="1" max="3600" value="210" required>
+                <span class="seconds-label">sec</span>
+                <button class="button button-small" type="submit">Add to queue</button>
+              </form>
+              <ol class="queue-list" id="queue-list"></ol>
+            </section>
+          </div>
+
+          <aside class="room-aside">
+            <section class="people-card card">
+              <div class="aside-heading"><div><p class="eyebrow">IN THIS ROOM</p><h3>The listening party</h3></div><span class="people-count" id="aside-member-count">01</span></div>
+              <div class="people-list" id="people-list"></div>
+              <div class="host-note"><span class="host-crown">♛</span><span>The host keeps the beat. Everyone can shape the queue.</span></div>
+            </section>
+            <section class="sync-card">
+              <div class="sync-icon">↗</div><div><p class="sync-title">In sync, together</p><p class="sync-copy">Playback state is shared live with everyone in the room.</p></div>
+              <div class="sync-meter"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+            </section>
+            <button class="leave-button" id="leave-room">← Leave room</button>
+          </aside>
+        </section>
+      </main>
+
+      <footer class="footer"><span>DESIGNED FOR THE MOMENTS THAT SOUND BETTER SHARED</span><span>LISTEN TOGETHER <span class="footer-dot">●</span> ROOM SYNC POC</span></footer>
+    </div>
+    <script src="/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,143 @@
+flowchart TB
+  %% Legend: solid = synchronous request, dashed = async event or replication, thick = audio bytes
+
+  subgraph CLIENTS["Clients: web, mobile, desktop"]
+    WEB["Web client<br/>hls.js + WebSocket"]
+    MOB["Mobile client<br/>native player + WebSocket"]
+    DESK["Desktop client<br/>native player + WebSocket"]
+  end
+
+  GSLB["Global traffic manager<br/>latency routing, health checks"]
+
+  subgraph REGA["Region A: primary home region for the rooms it owns"]
+
+    subgraph EDGEA["Edge and entry"]
+      APIGW["API gateway<br/>TLS, OAuth2 token check, rate limits"]
+      WSG["WebSocket gateway fleet<br/>connection hosting, fan-out, telemetry aggregation"]
+    end
+
+    subgraph CTRL["Control plane services"]
+      AUTH["Identity service<br/>OAuth2 / OIDC, sessions"]
+      CAT["Catalogue service"]
+      SRCH["Search service"]
+      PBS["Playback service<br/>entitlement, signed cookies"]
+      ROOMAPI["Room service<br/>create, invite, join tickets"]
+      ROOMOWN["Room owner fleet<br/>single-writer room actors per shard"]
+      LEASE["Lease store: etcd<br/>shard leases, fencing epochs"]
+      TELE["Telemetry ingest<br/>batched client beacons"]
+    end
+
+    subgraph STATE["State and messaging"]
+      PG[("PostgreSQL<br/>users, tracks, rights, playlists, room metadata")]
+      REDIS[("Redis cluster<br/>hot room snapshots, cache, sharded pub/sub")]
+      OS[("OpenSearch<br/>catalogue index")]
+      KAFKA[["Kafka<br/>room-events, catalog-changes, playback-events"]]
+    end
+
+    subgraph PIPE["Async processors"]
+      INDEXER["Search indexer"]
+      HIST["Listening-history processor"]
+      ROY["Royalty-event processor"]
+      INGEST["Audio ingest and validation"]
+      XCODE["Transcoding and packaging workers"]
+    end
+
+    subgraph DATA["Analytics and durable history"]
+      SCY[("Listening-history store<br/>ScyllaDB")]
+      CH[("ClickHouse<br/>analytics warehouse")]
+      LEDGER[("Royalty ledger<br/>append-only, WORM object store")]
+    end
+
+    subgraph OBS["Observability"]
+      OTEL["OpenTelemetry collector"]
+      PROM["Prometheus"]
+      GRAF["Grafana"]
+      LOGS["Central logs and traces"]
+    end
+  end
+
+  subgraph AUDIO["Audio data plane: separate from the control plane"]
+    CDN["CDN edge caches<br/>regional PoPs"]
+    SHIELD["Origin shield"]
+    OBJ[("Object storage<br/>masters, immutable HLS segments")]
+    OBJR[("Object storage replica<br/>region B")]
+  end
+
+  subgraph REGB["Region B: warm standby and remote gateways"]
+    WSGB["WebSocket gateways<br/>remote listeners"]
+    RELAY["Cross-region relay"]
+    KAFKAB[["Kafka mirror"]]
+    PGB[("PostgreSQL replica")]
+    OWNB["Standby room owners"]
+    REDISB[("Redis, rebuilt from log")]
+  end
+
+  %% Control plane
+  CLIENTS -->|"HTTPS and WSS"| GSLB
+  GSLB --> APIGW
+  GSLB --> WSG
+  GSLB -.->|"latency routing and failover"| WSGB
+  APIGW --> AUTH
+  APIGW --> CAT
+  APIGW --> SRCH
+  APIGW --> PBS
+  APIGW --> ROOMAPI
+  APIGW --> TELE
+  CAT --> PG
+  CAT --> REDIS
+  SRCH --> OS
+  SRCH --> REDIS
+  PBS -->|"entitlement and rights check"| PG
+  ROOMAPI -->|"room metadata, invites"| PG
+  ROOMAPI -->|"join ticket"| AUTH
+
+  %% Real-time room path
+  WSG -->|"commands over gRPC"| ROOMOWN
+  WSG -->|"snapshot reads, subscribe"| REDIS
+  ROOMOWN -->|"lease and epoch"| LEASE
+  ROOMOWN -->|"commit event: source of truth"| KAFKA
+  ROOMOWN -->|"snapshot CAS and publish"| REDIS
+  REDIS -->|"sharded pub/sub events"| WSG
+
+  %% Event pipelines
+  TELE -.->|"playback events"| KAFKA
+  PG -.->|"outbox CDC"| KAFKA
+  KAFKA -.-> INDEXER
+  INDEXER --> OS
+  KAFKA -.-> HIST
+  HIST --> SCY
+  KAFKA -.-> ROY
+  ROY --> LEDGER
+  KAFKA -.->|"stream sink"| CH
+
+  %% Ingestion
+  INGEST --> OBJ
+  INGEST --> XCODE
+  XCODE --> OBJ
+  XCODE -.->|"asset ready"| KAFKA
+
+  %% Audio data plane
+  CLIENTS ==>|"HLS segments over HTTPS"| CDN
+  CDN ==> SHIELD
+  SHIELD ==> OBJ
+  PBS -.->|"signing keys shared with CDN"| CDN
+
+  %% Observability
+  EDGEA -.->|"metrics, traces, logs"| OTEL
+  CTRL -.->|"metrics, traces, logs"| OTEL
+  PIPE -.->|"metrics, traces, logs"| OTEL
+  OTEL --> PROM
+  PROM --> GRAF
+  OTEL --> LOGS
+  OTEL -.->|"drift and latency telemetry"| CH
+
+  %% Multi-region replication and failover
+  KAFKA -.->|"async mirror"| KAFKAB
+  PG -.->|"streaming replication"| PGB
+  OBJ -.->|"cross-region replication"| OBJR
+  SHIELD -.->|"origin failover"| OBJR
+  KAFKAB -.->|"restore room state on failover"| OWNB
+  OWNB --> REDISB
+  REDIS -.->|"home-region room events"| RELAY
+  RELAY --> WSGB
+  WSGB -->|"commands over cross-region gRPC"| ROOMOWN
